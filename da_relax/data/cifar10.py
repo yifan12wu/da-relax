@@ -29,6 +29,7 @@ DATA_CACHE = DataCache()
 
 
 def maybe_download_and_extract(data_dir=DATA_DIR):
+    """Download and extract cifar10 dataset."""
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
     filename = DATA_URL.split('/')[-1]

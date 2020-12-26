@@ -12,7 +12,7 @@ from . import data_base
 from . import utils
 
 
-DATA_URL = 'https://yann.lecun.com/exdb/mnist'
+DATA_URL = 'http://yann.lecun.com/exdb/mnist'
 DATA_FILES = {
         'train_images': 'train-images-idx3-ubyte.gz',
         'train_labels': 'train-labels-idx1-ubyte.gz',
@@ -23,7 +23,7 @@ DATA_DIR = '/media/yw4/hdd/datasets/mnist'
 
 
 class DataCache:
-    """Avoid loading data mutiple times."""
+    """Avoid loading data more than once."""
 
     def __init__(self):
         self.train = None
@@ -34,6 +34,7 @@ DATA_CACHE = DataCache()
 
 
 def _read_datafile(path, expected_dims):
+    """Utility function for reading mnist data files."""
     base_magic_num = 2048
     with gzip.GzipFile(path) as f:
         magic_num = struct.unpack('>I', f.read(4))[0]
@@ -50,37 +51,34 @@ def _read_datafile(path, expected_dims):
 
 
 def _read_images(path):
+    """Read an mnist image file, return as an NHWC np array."""
     return _read_datafile(path, 3).reshape([-1, 28, 28, 1])
 
 
 def _read_labels(path):
+    """Read an mnist label file, return as an np array with size [N]."""
     return _read_datafile(path, 1)
 
 
-def _maybe_download(url, path):
-    if not os.path.exists(path):
-        logging.info('Downloading {} to {}.'.format(url, path))
-        response = requests.get
-
-def maybe_download_and_extract(data_dir=DATA_DIR):
+def maybe_download(data_dir=DATA_DIR):
+    """Download mnist dataset."""
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
-    filename = DATA_URL.split('/')[-1]
-    filepath = os.path.join(data_dir, filename)
-    if not os.path.exists(filepath):
-        def _progress(count, block_size, total_size):
-            sys.stdout.write('\r>> Downloading {} {:.1f}'
-                    .format(filename, count*block_size/total_size*100.0))
-            sys.stdout.flush()
-        filepath, _ = request.urlretrieve(
-                DATA_URL, filepath, _progress)
-        print()
-        statinfo = os.stat(filepath)
-        print('Sucessfully downloaded {} {} bytes'
-                .format(filename, statinfo.st_size))
-    if not os.path.exists(
-            os.path.join(data_dir, 'cifar-10-batches-py')):
-        tarfile.open(filepath, 'r:gz').extractall(data_dir)
+    for filename in DATA_FILES.values():
+        filepath = os.path.join(data_dir, filename)
+        fileurl = os.path.join(DATA_URL, filename)
+        # download if the file doesn't exist.
+        if not os.path.exists(filepath):
+            def _progress(count, block_size, total_size):
+                sys.stdout.write('\r>> Downloading {} {:.1f}'
+                        .format(filename, count*block_size/total_size*100.0))
+                sys.stdout.flush()
+            filepath, _ = request.urlretrieve(
+                    fileurl, filepath, _progress)
+            print()
+            statinfo = os.stat(filepath)
+            print('Sucessfully downloaded {} {} bytes'
+                    .format(filename, statinfo.st_size))
 
 
 def load_train(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
