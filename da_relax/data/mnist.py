@@ -82,21 +82,11 @@ def maybe_download(data_dir=DATA_DIR):
 
 
 def load_train(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
-    maybe_download_and_extract(data_dir=data_dir)
-    data_dir = os.path.join(data_dir, 'cifar-10-batches-py')
-    if cache.train is None:
-        x_batches = []
-        y_batches = []
-        for i in range(5):
-            batchfile = os.path.join(
-                    data_dir, 'data_batch_{}'.format(i+1))
-            with open(batchfile, 'rb') as f:
-                batchdict = pickle.load(f, encoding='bytes')
-            x_batches.append(batchdict[b'data']
-                    .reshape([-1, 3, 32, 32]).transpose([0, 2, 3, 1]))
-            y_batches.append(np.array(batchdict[b'labels']))
-        x = np.concatenate(x_batches, axis=0)
-        y = np.concatenate(y_batches, axis=0).astype(np.int64)
+    if cache.train is not None:
+        image_path = os.path.join(data_dir, DATA_FILES['train_images'])
+        label_path = os.path.join(data_dir, DATA_FILES['train_labels'])
+        x = _read_images(image_path)
+        y = _read_labels(label_path)
         # shuffle
         rand = np.random.RandomState(0)
         idx = rand.permutation(x.shape[0])
@@ -110,15 +100,11 @@ def load_train(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
 
 
 def load_test(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
-    maybe_download_and_extract(data_dir=data_dir)
-    data_dir = os.path.join(data_dir, 'cifar-10-batches-py')
-    if cache.test is None:
-        batchfile = os.path.join(data_dir, 'test_batch')
-        with open(batchfile, 'rb') as f:
-            batchdict = pickle.load(f, encoding='bytes')
-        x = batchdict[b'data'].reshape([-1, 3, 32, 32]).transpose(
-                [0, 2, 3, 1])
-        y = np.array(batchdict[b'labels']).astype(np.int64)
+    if cache.test is not None:
+        image_path = os.path.join(data_dir, DATA_FILES['test_images'])
+        label_path = os.path.join(data_dir, DATA_FILES['test_labels'])
+        x = _read_images(image_path)
+        y = _read_labels(label_path)
         # shuffle
         rand = np.random.RandomState(0)
         idx = rand.permutation(x.shape[0])
