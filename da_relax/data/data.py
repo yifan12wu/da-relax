@@ -28,9 +28,9 @@ class Batch:
     batch) and can generate iterators for given mini-batch sizes.
 
     A batch instance provides the following access to the data batch:
-        data_keys: a list of variable keys.
+        var_keys: a list of variable keys.
         size: number of samples.
-        data: data.[variable_key].(val/prepro/shape).
+        data: data.[var_key].(val/prepro/shape).
         info: info.[info_key].
         get_one_shot_iterator: return a one shot iterator given batch size.
         get_random_iterator: return a random iterator given batch size.
@@ -38,15 +38,15 @@ class Batch:
 
     def __init__(self, data_dict, info_dict=None):
         """
-        data_dict: {variable_key: (val, prepro)}. A batch of data may contain
-        multiple variables (e.g., x, y). variable_key is the name of the
+        data_dict: {var_key: (val, prepro)}. A batch of data may contain
+        multiple variables (e.g., x, y). var_key is the name of the
         variable. val is the (batched) value. prepro is the proprocessing
         needed when generating minibatches.
 
         info_dict contains additional information about the data batch.
         """
         size = None
-        data_keys = []
+        var_keys = []
         data = flag_tools.Flags()
         info = flag_tools.Flags()
         for key, (val, prepro) in data_dict.items():
@@ -65,18 +65,18 @@ class Batch:
             item.prepro = prepro
             item.shape = shape
             setattr(data, key, item)
-            data_keys.append(key)
+            var_keys.append(key)
         if info_dict is not None:
             for key, val in info_dict.items():
                 setattr(info, key, val)
         self._data = data
         self._info = info
-        self._data_keys = data_keys
+        self._var_keys = var_keys
         self._size = size
 
     @property
-    def data_keys(self):
-        return self._data_keys
+    def var_keys(self):
+        return self._var_keys
 
     @property
     def size(self):
@@ -93,7 +93,7 @@ class Batch:
     def _data_iterator(self, index_iterator):
         for batch_indices, size in index_iterator:
             minibatch = flag_tools.Flags()
-            for key in self._data_keys:
+            for key in self._var_keys:
                 full_batch = getattr(self._data, key)
                 sampled_batch = full_batch.val[batch_indices].copy()
                 sampled_batch = full_batch.prepro(sampled_batch)
@@ -114,71 +114,55 @@ class Batch:
 
 
 class Dataset:
+    """A dataset contains a set of (possibly overlapping) splitted batches."""
 
     def _build(self):
+        batch_keys = self._get_batch_keys()
         info_dict = self._get_info_dict()
-        keys = self._get_keys()
+        var_keys = self._get_var_keys()
         prepros = self._get_prepros()
-        train_data = self._get_train()
-        if train_data is not None:
-            data_dict = self._get_data_dict(keys, train_data, prepros)
-            self._train = Batch(data_dict=data_dict, info_dict=info_dict)
-        else:
-            self._train = None
-        valid_data = self._get_valid()
-        if valid_data is not None:
-            data_dict = self._get_data_dict(keys, valid_data, prepros)
-            self._valid = Batch(data_dict=data_dict, info_dict=info_dict)
-        else:
-            self._valid = None
-        test_data = self._get_test()
-        if test_data is not None:
-            data_dict = self._get_data_dict(keys, test_data, prepros)
-            self._test = Batch(data_dict=data_dict, info_dict=info_dict)
-        else:
-            self._test = None
+        for batch_key in batch_keys:
+            batch = self._get_batch(batch_key)
+            data_dict = self._get_data_dict(var_keys, batch, prepros)
+            if hasattr(self, batch_key):
+                raise ValueError('Invalid batch key: {}.'.format(batch_key))
+            else:
+                batch = Batch(data_dict=data_dict, info_dict=info_dict)
+                setattr(self, batch_key, batch)
+        # convert info dict to flags
         info = flag_tools.Flags()
         if info_dict is not None:
             for key, val in info_dict.items():
                 setattr(info, key, val)
         self._info = info
 
-    def _get_data_dict(self, keys, data, prepros):
+    def _get_data_dict(self, var_keys, data, prepros):
         data_dict = collections.OrderedDict()
         for key, d, prepro in zip(keys, data, prepros):
             data_dict[key] = (d, prepro)
         return data_dict
 
-    def _get_keys(self):
-        raise NotImplementedError
+    def _get_batch_keys(self):
+        return ['train', 'valid', 'test']
 
-    def _get_train(self):
-        return None
-
-    def _get_valid(self):
-        return None
-
-    def _get_test(self):
-        return None
+    def _get_var_keys(self):
+        return ['x', 'y']
 
     def _get_prepros(self):
-        keys = self._get_keys()
-        return list([None for _ in keys])
+        """A list of proprocessing functions in the same order of var_keys."""
+        keys = self._get_var_keys()
+        identity_map = lambda x: x
+        return [identity_map for _ in keys]
+
+    def _get_batch(self, key):
+        raise NotImplementedError
 
     def _get_info_dict(self):
         return {}
 
     @property
-    def train(self):
-        return self._train
-
-    @property
-    def valid(self):
-        return self._valid
-
-    @property
-    def test(self):
-        return self._test
+    def batch_keys(self):
+        return self._get_batch_keys()
 
     @property
     def info(self):
