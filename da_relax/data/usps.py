@@ -1,8 +1,5 @@
 import gzip
-import operator
 import os
-import struct
-from functools import reduce
 from urllib import request
 from urllib.parse import urljoin
 import sys
@@ -14,14 +11,12 @@ from . import data as data_lib
 from . import utils
 
 
-DATA_URL = 'http://yann.lecun.com/exdb/mnist'
+DATA_URL = 'http://statweb.stanford.edu/~tibs/ElemStatLearn/datasets/'
 DATA_FILES = {
-        'train_images': 'train-images-idx3-ubyte.gz',
-        'train_labels': 'train-labels-idx1-ubyte.gz',
-        'test_images': 't10k-images-idx3-ubyte.gz',
-        'test_labels': 't10k-labels-idx1-ubyte.gz',
+        'train': 'zip.train.gz',
+        'test': 'zip.test.gz',
         }
-DATA_DIR = '/media/yw4/hdd/datasets/mnist'
+DATA_DIR = '/media/yw4/hdd/datasets/usps'
 
 
 class DataCache:
@@ -35,35 +30,23 @@ class DataCache:
 DATA_CACHE = DataCache()
 
 
-def _read_datafile(path, expected_dims):
-    """Utility function for reading mnist data files."""
-    base_magic_num = 2048
+def _read_datafile(path):
+    """Utility function for reading usps data files."""
+    labels, images = [], []
     with gzip.GzipFile(path) as f:
-        magic_num = struct.unpack('>I', f.read(4))[0]
-        expected_magic_num = base_magic_num + expected_dims
-        if magic_num != expected_magic_num:
-            raise ValueError('Incorrect MNIST magic number (expected '
-                    '{}, got {})'.format(expected_magic_num, magic_num))
-        dims = struct.unpack('>' + 'I' * expected_dims,
-                f.read(4 * expected_dims))
-        buf = f.read(reduce(operator.mul, dims))
-        data = np.frombuffer(buf, dtype=np.uint8)
-        data = data.reshape(dims)
-        return data
-
-
-def _read_images(path):
-    """Read an mnist image file, return as an NHWC np array."""
-    return _read_datafile(path, 3).reshape([-1, 28, 28, 1])
-
-
-def _read_labels(path):
-    """Read an mnist label file, return as an np array with size [N]."""
-    return _read_datafile(path, 1)
+        for line in f:
+            vals = line.strip().split()
+            labels.append(float(vals[0]))
+            images.append([float(val) for val in vals[1:]])
+        labels = np.array(labels, dtype=np.int64)
+        labels[labels == 10] = 0
+        images = np.array(images, dtype=np.float32).reshape([-1, 16, 16, 1])
+        images = (images + 1) / 2
+    return images, labels
 
 
 def maybe_download(data_dir=DATA_DIR):
-    """Download mnist dataset."""
+    """Download usps dataset."""
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
     for filename in DATA_FILES.values():
@@ -85,10 +68,8 @@ def maybe_download(data_dir=DATA_DIR):
 
 def load_train(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
     if cache.train is None:
-        image_path = os.path.join(data_dir, DATA_FILES['train_images'])
-        label_path = os.path.join(data_dir, DATA_FILES['train_labels'])
-        x = _read_images(image_path)
-        y = _read_labels(label_path)
+        filepath = os.path.join(data_dir, DATA_FILES['train'])
+        x, y = _read_datafile(filepath)
         if save_cache:
             cache.train = (x, y)
     else:
@@ -98,10 +79,8 @@ def load_train(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
 
 def load_test(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
     if cache.test is None:
-        image_path = os.path.join(data_dir, DATA_FILES['test_images'])
-        label_path = os.path.join(data_dir, DATA_FILES['test_labels'])
-        x = _read_images(image_path)
-        y = _read_labels(label_path)
+        filepath = os.path.join(data_dir, DATA_FILES['test'])
+        x, y = _read_datafile(filepath)
         if save_cache:
             cache.test = (x, y)
     else:
@@ -110,20 +89,20 @@ def load_test(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
 
 
 def x_prepro(x):
-    return x.astype(np.float32) / 255.0
+    return x
 
 
 def y_prepro(y):
-    return y.astype(np.int64)
+    return y
 
 
-class MNIST(data_lib.Dataset):
-    """50000 train, 10000 test."""
+class USPS(data_lib.Dataset):
+    """7291 train, 2007 test."""
 
     def __init__(
                 self, 
                 data_dir=DATA_DIR, 
-                n_train=40000, 
+                n_train=2000, 
                 n_valid=None, 
                 seed=0):
         train = load_train(data_dir=data_dir)
@@ -157,13 +136,13 @@ class MNIST(data_lib.Dataset):
         return {'n_classes': 10}
 
 
-class SubsampledMNIST(MNIST):
+class SubsampledUSPS(USPS):
 
     def __init__(
                 self,
                 classes=(0, 1, 2, 3, 4), 
                 data_dir=DATA_DIR, 
-                n_train=10000, 
+                n_train=2000, 
                 n_valid=None, 
                 seed=0):
         train = load_train(data_dir=data_dir)
