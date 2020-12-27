@@ -3,12 +3,14 @@ import operator
 import os
 import struct
 from functools import reduce
-from uillib.parse import urljoin
+from urllib import request
+from urllib.parse import urljoin
+import sys
 
 import numpy as np
 import collections
 
-from . import data_base
+from . import data as data_lib
 from . import utils
 
 
@@ -87,11 +89,6 @@ def load_train(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
         label_path = os.path.join(data_dir, DATA_FILES['train_labels'])
         x = _read_images(image_path)
         y = _read_labels(label_path)
-        # shuffle
-        rand = np.random.RandomState(0)
-        idx = rand.permutation(x.shape[0])
-        x = x[idx]
-        y = y[idx]
         if save_cache:
             cache.train = (x, y)
     else:
@@ -105,11 +102,6 @@ def load_test(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
         label_path = os.path.join(data_dir, DATA_FILES['test_labels'])
         x = _read_images(image_path)
         y = _read_labels(label_path)
-        # shuffle
-        rand = np.random.RandomState(0)
-        idx = rand.permutation(x.shape[0])
-        x = x[idx]
-        y = y[idx]
         if save_cache:
             cache.test = (x, y)
     else:
@@ -125,121 +117,73 @@ def y_prepro(y):
     return y.astype(np.int64)
 
 
-class Cifar10(data_base.Dataset):
+class MNIST(data_lib.Dataset):
 
-    def __init__(self, data_dir=DATA_DIR, n_train=40000):
-        self._data_dir = data_dir
-        self._n_train = n_train
-        x_train, y_train = load_train(data_dir=data_dir)
-        self._x_test, self._y_test = load_test(data_dir=data_dir)
-        self._x_train = x_train[:self._n_train]
-        self._y_train = y_train[:self._n_train]
-        self._x_valid = x_train[self._n_train:]
-        self._y_valid = y_train[self._n_train:]
+    def __init__(
+                self, 
+                data_dir=DATA_DIR, 
+                n_train=40000, 
+                n_valid=None, 
+                seed=0):
+        train = load_train(data_dir=data_dir)
+        n = train[0].shape[0]
+        if n_valid is None:
+            n_valid = n - n_train
+        split_sizes = [n_train, n_valid]
+        train_valid = utils.subsample(
+            batch=train, sizes=split_sizes, seed=seed)
+        test = load_test(data_dir=data_dir)
+        self._batches = {
+            'train': train_valid[0],
+            'valid': train_valid[1],
+            'test': test,
+        } 
         self._build()
 
-    def _get_keys(self):
-        return ('x', 'y')
+    def _get_batch_keys(self):
+        return ['train', 'valid', 'test']
 
-    def _get_train(self):
-        return (self._x_train, self._y_train)
-
-    def _get_valid(self):
-        return (self._x_valid, self._y_valid)
-
-    def _get_test(self):
-        return (self._x_test, self._y_test)
+    def _get_var_keys(self):
+        return ['x', 'y']
 
     def _get_prepros(self):
-        return (x_prepro, y_prepro)
+        return [x_prepro, y_prepro]
+
+    def _get_batch(self, key):
+        return self._batches[key]
 
     def _get_info_dict(self):
         return {'n_classes': 10}
 
 
-CLASSES1 = [0, 1, 2, 3, 4]
-CLASSES2 = [5, 6, 7, 8, 9]
+class SubsampledMNIST(MNIST):
 
-
-class Cifar5(data_base.Dataset):
-
-    def __init__(self, data_dir=DATA_DIR, n_train=10000, n_valid=5000):
-        assert n_train <= 20000
-        x_train_full, y_train_full = load_train(
-                data_dir=data_dir, save_cache=False)
-        x_test_full, y_test_full = load_test(
-                data_dir=data_dir, save_cache=False)
-        self._n_train = n_train
-        self._n_valid = n_valid
-        self._classes = CLASSES1
-        # training and validation
-        train_and_valid = utils.subsample(
-                x=x_train_full, 
-                y=y_train_full,
-                classes=self._classes,
-                n_samples=[n_train, n_valid])
-        self._x_train, self._y_train = train_and_valid[0]
-        self._x_valid, self._y_valid = train_and_valid[1]
-        # test
-        self._x_test, self._y_test = utils.subsample(
-                x=x_test_full,
-                y=y_test_full,
-                classes=self._classes)
+    def __init__(
+                self,
+                classes=(0, 1, 2, 3, 4), 
+                data_dir=DATA_DIR, 
+                n_train=10000, 
+                n_valid=None, 
+                seed=0):
+        train = load_train(data_dir=data_dir)
+        test = load_test(data_dir=data_dir)
+        # select all samples from the given classes 
+        train = utils.select_classes(train, classes)
+        test = utils.select_classes(test, classes) 
+        # train valid split
+        n = train[0].shape[0]
+        if n_valid is None:
+            n_valid = n - n_train
+        split_sizes = [n_train, n_valid]
+        train_valid = utils.subsample(
+            batch=train, sizes=split_sizes, seed=seed)
+        self._batches = {
+            'train': train_valid[0],
+            'valid': train_valid[1],
+            'test': test,
+        } 
         self._build()
 
-    def _get_keys(self):
-        return ('x', 'y')
-
-    def _get_train(self):
-        return (self._x_train, self._y_train)
-
-    def _get_valid(self):
-        return (self._x_valid, self._y_valid)
-
-    def _get_test(self):
-        return (self._x_test, self._y_test)
-
-    def _get_prepros(self):
-        return (x_prepro, y_prepro)
-
-    def _get_info_dict(self):
-        return {'n_classes': len(self._classes)}
-
-        
-class Cifar5TestBatch(data_base.Batch):
-
-    def __init__(self, data_dir=DATA_DIR, name='cifar5'):
-        x_test_full, y_test_full = load_test(
-                data_dir=data_dir, save_cache=False)
-        classes = CLASSES1
-        x_test, y_test = utils.subsample(
-                x=x_test_full,
-                y=y_test_full,
-                classes=classes)
-        data_dict = collections.OrderedDict()
-        data_dict['x'] = (x_test, x_prepro)
-        data_dict['y'] = (y_test, y_prepro)
-        info_dict = collections.OrderedDict()
-        info_dict['name'] = name
-        info_dict['n_classes'] = len(classes)
-        super().__init__(data_dict=data_dict, info_dict=info_dict)
 
 
-class Cifar52TestBatch(data_base.Batch):
-
-    def __init__(self, data_dir=DATA_DIR, name='cifar52'):
-        x_test_full, y_test_full = load_test(
-                data_dir=data_dir, save_cache=False)
-        classes = CLASSES2
-        x_test, y_test = utils.subsample(
-                x=x_test_full,
-                y=y_test_full,
-                classes=classes)
-        data_dict = collections.OrderedDict()
-        data_dict['x'] = (x_test, x_prepro)
-        data_dict['y'] = (y_test, y_prepro)
-        info_dict = collections.OrderedDict()
-        info_dict['name'] = name
-        info_dict['n_classes'] = len(classes)
-        super().__init__(data_dict=data_dict, info_dict=info_dict)
 

@@ -114,7 +114,7 @@ class Batch:
 
 
 class Dataset:
-    """A dataset contains a set of (possibly overlapping) splitted batches."""
+    """A dataset contains a set of (possibly overlapping) batches."""
 
     def _build(self):
         batch_keys = self._get_batch_keys()
@@ -138,7 +138,7 @@ class Dataset:
 
     def _get_data_dict(self, var_keys, data, prepros):
         data_dict = collections.OrderedDict()
-        for key, d, prepro in zip(keys, data, prepros):
+        for key, d, prepro in zip(var_keys, data, prepros):
             data_dict[key] = (d, prepro)
         return data_dict
 
@@ -155,6 +155,7 @@ class Dataset:
         return [identity_map for _ in keys]
 
     def _get_batch(self, key):
+        # return a list of data batches, in the order of var_keys
         raise NotImplementedError
 
     def _get_info_dict(self):
