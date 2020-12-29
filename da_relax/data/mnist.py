@@ -7,8 +7,9 @@ from urllib import request
 from urllib.parse import urljoin
 import sys
 
-import numpy as np
 import collections
+import numpy as np
+from skimage import transform
 
 from . import data as data_lib
 from . import utils
@@ -55,12 +56,13 @@ def _read_datafile(path, expected_dims):
 
 def _read_images(path):
     """Read an mnist image file, return as an NHWC np array."""
-    return _read_datafile(path, 3).reshape([-1, 28, 28, 1])
+    x = _read_datafile(path, 3).reshape([-1, 28, 28, 1])
+    return x.astype(np.float32) / 255.0
 
 
 def _read_labels(path):
     """Read an mnist label file, return as an np array with size [N]."""
-    return _read_datafile(path, 1)
+    return _read_datafile(path, 1).astype(np.int64)
 
 
 def maybe_download(data_dir=DATA_DIR):
@@ -110,13 +112,6 @@ def load_test(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
     return x, y
 
 
-def x_prepro(x):
-    return x.astype(np.float32) / 255.0
-
-
-def y_prepro(y):
-    return y.astype(np.int64)
-
 
 class MNIST(data_lib.Dataset):
     """60000 train, 10000 test."""
@@ -124,22 +119,24 @@ class MNIST(data_lib.Dataset):
     def __init__(self, 
             data_dir=DATA_DIR, 
             n_train=50000, 
-            n_valid=None, 
+            n_valid=None,
+            resize=None,
             seed=0):
         maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
+        test = load_test(data_dir=data_dir)
         n = train[0].shape[0]
         if n_valid is None:
             n_valid = n - n_train
         split_sizes = [n_train, n_valid]
         train_valid = utils.subsample(
             batch=train, sizes=split_sizes, seed=seed)
-        test = load_test(data_dir=data_dir)
         self._batches = {
             'train': train_valid[0],
             'valid': train_valid[1],
             'test': test,
-        } 
+        }
+        self._resize = resize
         self._build()
 
     def _get_batch_keys(self):
@@ -148,11 +145,14 @@ class MNIST(data_lib.Dataset):
     def _get_var_keys(self):
         return ['x', 'y']
 
-    def _get_prepros(self):
-        return [x_prepro, y_prepro]
-
     def _get_batch(self, key):
-        return self._batches[key]
+        x, y = self._batches[key]
+        if self._resize is not None:
+            new_x = []
+            for i in range(x.shape[0]):
+                new_x.append(transform.resize(x[i], self._resize))
+            x = np.stack(new_x, axis=0)
+        return x, y
 
     def _get_info_dict(self):
         return {'n_classes': 10}
@@ -164,7 +164,8 @@ class SubsampledMNIST(MNIST):
             classes=(0, 1, 2, 3, 4), 
             data_dir=DATA_DIR, 
             n_train=10000, 
-            n_valid=None, 
+            n_valid=None,
+            resize=None,
             seed=0):
         maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
@@ -183,7 +184,8 @@ class SubsampledMNIST(MNIST):
             'train': train_valid[0],
             'valid': train_valid[1],
             'test': test,
-        } 
+        }
+        self._resize = resize 
         self._build()
 
 

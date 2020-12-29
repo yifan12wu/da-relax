@@ -88,14 +88,6 @@ def load_test(data_dir=DATA_DIR, cache=DATA_CACHE, save_cache=True):
     return x, y
 
 
-def x_prepro(x):
-    return x
-
-
-def y_prepro(y):
-    return y
-
-
 class USPS(data_lib.Dataset):
     """7291 train, 2007 test."""
 
@@ -125,9 +117,6 @@ class USPS(data_lib.Dataset):
 
     def _get_var_keys(self):
         return ['x', 'y']
-
-    def _get_prepros(self):
-        return [x_prepro, y_prepro]
 
     def _get_batch(self, key):
         return self._batches[key]
