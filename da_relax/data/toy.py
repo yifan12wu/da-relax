@@ -3,13 +3,6 @@ import numpy as np
 from . import data as data_lib
 
 
-def sample_gaussian(mean, std, n, rand=None):
-    if rand is None:
-        rand = np.random
-    x = rand.normal(size=[n, mean.shape[0]]) * std + mean
-    return x
-
-
 DATA_CONFIG = {
     'source': {
         'means': [[-1., -0.3], [1., 0.3]],
@@ -24,6 +17,13 @@ DATA_CONFIG = {
         'labels': [0, 1],
     },
 }
+
+
+def sample_gaussian(mean, std, n, rand=None):
+    if rand is None:
+        rand = np.random
+    x = rand.normal(size=[n, mean.shape[0]]) * std + mean
+    return x
 
 
 def generate_xy(config, n_samples, rand=None):
@@ -96,7 +96,7 @@ class TwoGaussianTarget(ToyDataset):
             n_train=1000,
             n_valid=1000,
             n_test=1000,
-            seed=1):
+            seed=10):
         super().__init__(
             config=DATA_CONFIG['target'],
             n_train=n_train,
