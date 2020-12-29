@@ -17,7 +17,7 @@ DATA_FILES = {
         'test': 'zip.test.gz',
         }
 DATA_DIR = '/media/yw4/hdd/datasets/usps'
-
+# DATA_DIR = os.path.join(os.getcwd(), 'datasets/usps')
 
 class DataCache:
     """Avoid loading data more than once."""
@@ -105,6 +105,7 @@ class USPS(data_lib.Dataset):
                 n_train=2000, 
                 n_valid=None, 
                 seed=0):
+        maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
         n = train[0].shape[0]
         if n_valid is None:
@@ -145,6 +146,7 @@ class SubsampledUSPS(USPS):
                 n_train=2000, 
                 n_valid=None, 
                 seed=0):
+        maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
         test = load_test(data_dir=data_dir)
         # select all samples from the given classes 

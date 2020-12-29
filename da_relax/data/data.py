@@ -18,7 +18,7 @@ def one_shot_index_iterator(n, batch_size):
 
 def random_index_iterator(n, batch_size):
     while True:
-        indices = np.random.choice(n, batch_size, replace=False)
+        indices = np.random.randint(n, size=batch_size)
         yield indices, batch_size
 
 
@@ -48,7 +48,6 @@ class Batch:
         size = None
         var_keys = []
         data = flag_tools.Flags()
-        info = flag_tools.Flags()
         for key, (val, prepro) in data_dict.items():
             if size is None:
                 size = val.shape[0]
@@ -66,11 +65,8 @@ class Batch:
             item.shape = shape
             setattr(data, key, item)
             var_keys.append(key)
-        if info_dict is not None:
-            for key, val in info_dict.items():
-                setattr(info, key, val)
         self._data = data
-        self._info = info
+        self._info = info_dict
         self._var_keys = var_keys
         self._size = size
 
@@ -129,12 +125,7 @@ class Dataset:
             else:
                 batch = Batch(data_dict=data_dict, info_dict=info_dict)
                 setattr(self, batch_key, batch)
-        # convert info dict to flags
-        info = flag_tools.Flags()
-        if info_dict is not None:
-            for key, val in info_dict.items():
-                setattr(info, key, val)
-        self._info = info
+        self._info = info_dict
 
     def _get_data_dict(self, var_keys, data, prepros):
         data_dict = collections.OrderedDict()

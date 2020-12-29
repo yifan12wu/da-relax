@@ -22,6 +22,7 @@ DATA_FILES = {
         'test_labels': 't10k-labels-idx1-ubyte.gz',
         }
 DATA_DIR = '/media/yw4/hdd/datasets/mnist'
+# DATA_DIR = os.path.join(os.getcwd(), 'datasets/mnist')
 
 
 class DataCache:
@@ -118,14 +119,15 @@ def y_prepro(y):
 
 
 class MNIST(data_lib.Dataset):
-    """50000 train, 10000 test."""
+    """60000 train, 10000 test."""
 
     def __init__(
                 self, 
                 data_dir=DATA_DIR, 
-                n_train=40000, 
+                n_train=50000, 
                 n_valid=None, 
                 seed=0):
+        maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
         n = train[0].shape[0]
         if n_valid is None:
@@ -166,6 +168,7 @@ class SubsampledMNIST(MNIST):
                 n_train=10000, 
                 n_valid=None, 
                 seed=0):
+        maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
         test = load_test(data_dir=data_dir)
         # select all samples from the given classes 
