@@ -30,7 +30,7 @@ def generate_xy(config, n_samples, rand=None):
     xs = []
     ys = []
     ns_p = np.array(config['ns']).astype(np.float32)
-    ns = (ns_p / np.sum(ns_p) * n_samples).astype(np.int32)
+    ns = (ns_p / np.sum(ns_p) * n_samples).astype(np.int64)
     ns[-1] = n_samples - np.sum(ns[:-1])
     for mean, std, n, label in zip(
             config['means'], 
@@ -38,74 +38,68 @@ def generate_xy(config, n_samples, rand=None):
             ns, 
             config['labels']):
         x = sample_gaussian(np.array(mean), np.array(std), n, rand)
-        y = np.zeros(n, dtype=np.int32)
+        y = np.zeros(n, dtype=np.int64)
         y[:] = label
         xs.append(x)
         ys.append(y)
     return np.concatenate(xs, axis=0), np.concatenate(ys, axis=0)
 
 
-class Toy
+class ToyDataset(data_lib.Dataset):
+
+    def __init__(self,
+            config,
+            n_train=1000,
+            n_valid=1000,
+            n_test=1000,
+            seed=0):
+        rand = np.random.RandomState(seed)
+        train = generate_xy(config, n_train, rand)
+        valid = generate_xy(config, n_valid, rand)
+        test = generate_xy(config, n_test, rand)
+        self._batches = {'train': train, 'valid': valid, 'test': test}
+        self._config = config
+        self._build()
+
+    def _get_batch_keys(self):
+        return ['train', 'valid', 'test']
+
+    def _get_var_keys(self):
+        return ['x', 'y']
+
+    def _get_batch(self, key):
+        return self._batches[key]
+
+    def _get_info_dict(self):
+        return {'n_classes': len(self._config['labels'])}
 
 
 
-class MixGsDataset(object):
+class TwoGaussianSource(ToyDataset):
 
-    def __init__(self, 
-            data_cfg, 
-            n_samples,
-            rand=None,
-            shuffle=True):
-        x, y = generate_xy(data_cfg, n_samples, rand)
-        if shuffle:
-            if rand is None:
-                rand = np.random
-            idx = rand.permutation(n_samples)
-            x = x[idx]
-            y = y[idx]
-        self.x_ = x.astype(np.float32)
-        self.y_ = y.astype(np.int32)
-        self.n_samples = n_samples
-        self.tf_prepro = {}
-    
-    def x(self):
-        return self.x_
-
-    def y(self):
-        return self.y_
+    def __init__(self,
+            n_train=1000,
+            n_valid=1000,
+            n_test=1000,
+            seed=0):
+        super().__init__(
+            config=DATA_CONFIG['source'],
+            n_train=n_train,
+            n_valid=n_valid,
+            n_test=n_test,
+            seed=seed)
 
 
+class TwoGaussianTarget(ToyDataset):
 
-class MixGs(object):
-
-    def __init__(self, 
-            data_id, 
-            n_train, 
-            n_test, 
-            seed=None,
-            shuffle=True,
-            path=None,
-            ):
-
-        data_cfg = data_cfg_factory(data_id)
-        if seed is None:
-            self.seed = np.random.randint(1000)
-        else:
-            self.seed = seed
-        self.rand = np.random.RandomState(self.seed)
-        self.n_train = n_train
-        self.n_test = n_test
-        self.shuffle = shuffle
-
-        self.train = MixGsDataset(
-                data_cfg, 
-                n_samples=self.n_train,
-                rand=self.rand,
-                shuffle=self.shuffle
-                )
-        self.test = MixGsDataset(
-                data_cfg,
-                n_samples=self.n_test,
-                rand=self.rand,
-                shuffle=self.shuffle,
-                )
+    def __init__(self,
+            n_train=1000,
+            n_valid=1000,
+            n_test=1000,
+            seed=1):
+        super().__init__(
+            config=DATA_CONFIG['target'],
+            n_train=n_train,
+            n_valid=n_valid,
+            n_test=n_test,
+            seed=seed)

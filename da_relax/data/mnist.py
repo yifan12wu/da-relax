@@ -121,12 +121,11 @@ def y_prepro(y):
 class MNIST(data_lib.Dataset):
     """60000 train, 10000 test."""
 
-    def __init__(
-                self, 
-                data_dir=DATA_DIR, 
-                n_train=50000, 
-                n_valid=None, 
-                seed=0):
+    def __init__(self, 
+            data_dir=DATA_DIR, 
+            n_train=50000, 
+            n_valid=None, 
+            seed=0):
         maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
         n = train[0].shape[0]
@@ -161,13 +160,12 @@ class MNIST(data_lib.Dataset):
 
 class SubsampledMNIST(MNIST):
 
-    def __init__(
-                self,
-                classes=(0, 1, 2, 3, 4), 
-                data_dir=DATA_DIR, 
-                n_train=10000, 
-                n_valid=None, 
-                seed=0):
+    def __init__(self,
+            classes=(0, 1, 2, 3, 4), 
+            data_dir=DATA_DIR, 
+            n_train=10000, 
+            n_valid=None, 
+            seed=0):
         maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
         test = load_test(data_dir=data_dir)

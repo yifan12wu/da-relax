@@ -99,12 +99,11 @@ def y_prepro(y):
 class USPS(data_lib.Dataset):
     """7291 train, 2007 test."""
 
-    def __init__(
-                self, 
-                data_dir=DATA_DIR, 
-                n_train=2000, 
-                n_valid=None, 
-                seed=0):
+    def __init__(self, 
+            data_dir=DATA_DIR, 
+            n_train=2000, 
+            n_valid=None, 
+            seed=0):
         maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
         n = train[0].shape[0]
@@ -139,13 +138,12 @@ class USPS(data_lib.Dataset):
 
 class SubsampledUSPS(USPS):
 
-    def __init__(
-                self,
-                classes=(0, 1, 2, 3, 4), 
-                data_dir=DATA_DIR, 
-                n_train=2000, 
-                n_valid=None, 
-                seed=0):
+    def __init__(self,
+            classes=(0, 1, 2, 3, 4), 
+            data_dir=DATA_DIR, 
+            n_train=2000, 
+            n_valid=None, 
+            seed=0):
         maybe_download(data_dir)
         train = load_train(data_dir=data_dir)
         test = load_test(data_dir=data_dir)
