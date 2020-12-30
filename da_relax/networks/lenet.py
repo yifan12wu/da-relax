@@ -39,7 +39,7 @@ class LeNet(nn.Module):
         features.append(h)
         h = self.fc3(h)
         logits = h
-        featuers.append(logits)
+        features.append(logits)
         return logits, features
 
 

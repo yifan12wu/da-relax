@@ -4,6 +4,7 @@ import collections
 
 import numpy as np
 import torch
+from torch import nn
 from torch import optim
 from torch.utils import tensorboard
 
@@ -12,6 +13,9 @@ from ..tools import py_tools
 from ..tools import flag_tools
 from ..tools import summary_tools
 from ..tools import torch_tools
+
+
+DEFAULT_LOG_DIR = os.path.join(os.getenv('HOME', '/'), 'tmp/da-relax/test')
 
 
 def get_optimizer(name):
@@ -45,7 +49,7 @@ class DALearner:
             optimizer_cfg=None,
             batch_size=128,
             # training loop args
-            log_dir=os.path.join(os.getenv('HOME', '/'), 'tmp/da-relax'),
+            log_dir=DEFAULT_LOG_DIR,
             total_train_steps=30000,
             print_freq=2000,
             summary_freq=100,
@@ -110,20 +114,6 @@ class DALearner:
         model_path = os.path.join(self._log_dir, filename)
         torch.save(self._model.state_dict(), model_path)
 
-    def _get_current_lr(self):
-        return self._optimizer.param_groups[0]['lr']
-
-    def _get_current_wd(self):
-        return self._optimizer.param_groups[0]['weight_decay']
-
-    def _maybe_update_optimizer(self):
-        lr = self._optimizer_config.get_lr(self._global_step)
-        for param_group in self._optimizer.param_groups:
-            param_group['lr'] = lr
-        wd = self._optimizer_config.get_wd(self._global_step)
-        for param_group in self._optimizer.param_groups:
-            param_group['weight_decay'] = wd
-
     def _get_train_batch(self):
         source_batch, _ = next(self._source_train_iter)
         target_batch, _ = next(self._target_train_iter)
@@ -145,11 +135,8 @@ class DALearner:
         self._optimizer.zero_grad()
         loss.backward()
         self._optimizer.step()
-        info['lr'] = self._get_current_lr()
-        info['wd'] = self._get_current_wd()
         self._train_info.update(info)
         self._global_step += 1
-        self._maybe_update_optimizer()
 
     def _get_valid_batch(self):
         source_batch, _ = next(self._source_valid_iter)
@@ -223,22 +210,21 @@ class DALearner:
         logging.info(summary_tools.get_summary_str(info=self._result_info))
         self._save_result()
 
-
     def _evaluate(self, data_iter):
-        info = collections.OrderedDict()
         total_loss = 0.0
         total_acc = 0.0
         total_size = 0
         for batch, size in data_iter:
-            x = self._tensor(batch.x)
-            y = self._tensor(batch.y)
-            output_head = self._model(x, is_training=False)
+            x = torch_tools.to_tensor(batch.x, self._device)
+            y = torch_tools.to_tensor(batch.y, self._device)
+            output_head = self._f_fn(x, is_training=False)
             output_head.get_label(y)
             loss = output_head.losses[:size].sum().item()
             acc = output_head.accs[:size].sum().item()
             total_loss += loss
             total_acc += acc
             total_size += size
+        info = collections.OrderedDict()
         info['eval_acc'] = total_acc / total_size
         info['eval_loss'] = total_loss / total_size
         return info
@@ -258,74 +244,79 @@ class DALearner:
             np.savetxt(f, result, fmt='%.4g', delimiter=',')
 
 
-class TrainerConfig(flag_tools.ConfigBase):
+class DAModel(nn.Module):
+
+    def __init__(self,
+            f_model_factory,
+            d_model_factory,
+            ):
+        super().__init__()
+        self.f_fn = f_model_factory()
+        self.d_fn = d_model_factory()
+
+
+class DALearnerConfig(flag_tools.ConfigBase):
 
     def _set_default_flags(self):
         flags = self._flags
-        flags.total_train_steps = 30000
-        flags.log_dir = os.path.join(
-                os.getenv('HOME', '/'), 'tmp/uncertainty/train_model/tmp')
-        flags.model = 'lenet'
-        flags.data_dir = None
-        flags.dataset = 'cifar5'
+        # 
+        flags.device = None
+        flags.total_train_steps = 20000
+        flags.log_dir = DEFAULT_LOG_DIR
+        # 
         flags.batch_size = 128
         # logging
         flags.print_freq = 2000
         flags.summary_freq = 100
-        flags.save_freq = 10000
-        flags.test_freq = 10000
+        flags.save_freq = 5000
+        flags.eval_freq = 10000
         # optimizer
-        flags.optimizer_name = 'Momentum'
-        flags.init_lr = 0.001
-        flags.scheduled_lrs = ()
-        flags.init_wd = 0.0
-        flags.scheduled_wds = ()
-        #
-        flags.device = None
+        flags.opt_args = flag_tools.Flags(
+                name_f='Adam', lr_f=1e-3, wd_f=0.0,
+                name_d='Adam', lr_d=1e-3, wd_d=0.0,
+        )
 
     def _build(self):
-        self._dataset = self._build_dataset()
-        # build model after dataset so that it can use e.g. num of classes
-        self._model = self._build_model()
-        self._optimizer_config = self._build_optimizer_config()
-        self._trainer_args = self._build_trainer_args()
+        self._build_dataset()
+        self._build_model()
+        self._build_optimizer()
+        self._build_args()
 
     def _build_dataset(self):
-        args = {}
-        if self._flags.data_dir is not None:
-            args['data_dir'] = self._flags.data_dir
-        return datasets.get_dataset(self._flags.dataset, **args)
+        self._source_dataset = self._source_dataset_factory()
+        self._target_dataset = self._target_dataset_factory()
 
     def _build_model(self):
-        n_classes = self._dataset.info.n_classes
-        return nets.get_model(self._flags.model, n_classes=n_classes)
+        self._model_cfg = flag_tools.Flags(
+            f_model_factory=self._f_model_factory,
+            d_model_factory=self._d_model_factory,
+        )
 
-    def _build_optimizer_config(self):
-        opt_cfg = flag_tools.Flags()
-        opt_cfg.name = self._flags.optimizer_name
+    def _build_optimizer(self):
+        self._optimizer_cfg = flag_tools.Flags(
+            f_optimizer_factory=self._f_optimizer_factory,
+            d_optimizer_factory=self._d_optimizer_factory,
+        )
 
-        def _get_lr(step):
-            lr = self._flags.init_lr
-            for _lr, _step in self._flags.scheduled_lrs:
-                if step >= _step:
-                    lr = _lr
-            return lr
+    def _source_dataset_factory(self):
+        raise NotImplementedError
 
-        def _get_wd(step):
-            wd = self._flags.init_wd
-            for _wd, _step in self._flags.scheduled_wds:
-                if step >= _step:
-                    wd = _wd
-            return wd
-        opt_cfg.get_lr = _get_lr
-        opt_cfg.get_wd = _get_wd
-        return opt_cfg
+    def _target_dataset_factory(self):
+        raise NotImplementedError
 
-    @property
-    def trainer_args(self):
-        return vars(self._trainer_args)
+    def _f_model_factory(self):
+        raise NotImplementedError
 
-    def _build_trainer_args(self):
+    def _d_model_factory(self):
+        raise NotImplementedError
+
+    def _f_optimizer_factory(self, parameters):
+        raise NotImplementedError
+
+    def _d_optimizer_factory(self, parameters):
+        raise NotImplementedError
+
+    def _build_args(self):
         args = flag_tools.Flags()
         args.model = self._model
         args.dataset = self._dataset
@@ -341,4 +332,7 @@ class TrainerConfig(flag_tools.ConfigBase):
         args.device = self._flags.device
         return args
 
+    @property
+    def args(self):
+        return vars(self._args)
 
