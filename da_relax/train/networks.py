@@ -1,18 +1,19 @@
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 class LeNet(nn.Module):
-    """LeNet for 32x32 input."""
+    """LeNet for 16x16x1 input."""
 
-    def __init__(self, n_classes=10):
+    def __init__(self, n_classes):
         super(LeNet, self).__init__()
         self._n_classes = n_classes
-        self.conv1 = nn.Conv2d(3, 32, 5, padding=2)
+        self.conv1 = nn.Conv2d(1, 32, 5, padding=2)
         self.conv2 = nn.Conv2d(32, 64, 5, padding=2)
-        # size-2 max pool on outputs of each conv layer
+        # size-2 pooling on outputs of each conv layer
         # 8x8 image size on outputs of conv2
-        n_in = 8 * 8 * 64
+        n_in = 4 * 4 * 64
         self.fc1 = nn.Linear(n_in, 256)
         self.fc2 = nn.Linear(256, 128)
         self.fc3 = nn.Linear(128, self._n_classes)
@@ -41,6 +42,36 @@ class LeNet(nn.Module):
         logits = h
         features.append(logits)
         return logits, features
+
+
+class MLP(nn.Module):
+
+    def __init__(self, 
+            input_shape, 
+            n_units, 
+            output_activation=False,
+            ):
+        super().__init__()
+        self._layers = []
+        n_in = int(np.prod(np.array(input_shape)))
+        for i, n_out in enumerate(n_units):
+            layer = nn.Linear(n_in, n_out)
+            self.add_module('hidden_layer_{}'.format(i+1), layer)
+            n_in = n_units
+            self._layers.append(layer)
+        self._output_activation = output_activation
+
+    def forward(self, x):
+        h = x.reshape(x.shape[0], -1)
+        for layer in self._layers[:-1]:
+            h = layer(h)
+            h = F.relu(h)
+        h = self._layers[-1](h)
+        if self._output_activation:
+            h = F.relu(h)
+        return h
+
+
 
 
 
