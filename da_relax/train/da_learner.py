@@ -5,7 +5,7 @@ import collections
 import numpy as np
 import torch
 from torch import nn
-from torch import optim
+from torch import autograd
 from torch.utils import tensorboard
 
 from ..tools import timer_tools
@@ -14,25 +14,10 @@ from ..tools import flag_tools
 from ..tools import summary_tools
 from ..tools import torch_tools
 
+from . import utils
+
 
 DEFAULT_LOG_DIR = os.path.join(os.getenv('HOME', '/'), 'tmp/da-relax/test')
-
-
-def get_optimizer(name):
-    if name == 'SGD':
-        return optim.SGD
-    if name == 'Momentum':
-        def _opt_fn(params, lr=0.001, weight_decay=0.0):
-            return optim.SGD(
-                    params, 
-                    lr=lr, 
-                    weight_decay=weight_decay, 
-                    momentum=0.9)
-        return _opt_fn
-    if name == 'Adam':
-        return optim.Adam
-    else:
-        raise ValueError('Unknown optimizer {}.'.format(name))
 
 
 class DALearner:
@@ -48,6 +33,11 @@ class DALearner:
             model_cfg=None,
             optimizer_cfg=None,
             batch_size=128,
+            repr_layer=-2,  # -1: logits; -2: last hidden layer 
+            d_loss_w=1.0,  # weight for distribution matching loss
+            d_relax=0.0,  # relaxation for distribution matching
+            d_loss_name='jsbeta',  # divergence name
+            gradient_penalty=0,  # gradient penalty for regularizing d
             # training loop args
             log_dir=DEFAULT_LOG_DIR,
             total_train_steps=30000,
@@ -76,13 +66,16 @@ class DALearner:
                 log_dir=self._log_dir)
 
     def _build_model(self):
+        self._model = self._model_cfg.model_factory()
         self._model.to(device=self._device)
+        self._f_fn = self._model.f_fn
+        self._d_fn = self._model.d_fn
+        self._div_fn = utils.get_div_fn(self._d_loss_name, self._d_relax)
 
     def _build_optimizer(self):
-        cfg = self._optimizer_config
-        opt_fn = get_optimizer(cfg.name)
-        self._optimizer = opt_fn(self._model.parameters(),
-                lr=cfg.get_lr(0), weight_decay=cfg.get_wd(0))
+        cfg = self._optimizer_cfg
+        self._f_optimizer = cfg.f_optimizer_factory(self._f_fn.parameters())
+        self._d_optimizer = cfg.d_optimizer_factory(self._d_fn.parameters())
 
     def _build_dataset(self):
         source_train = self._source_dataset.train
@@ -121,21 +114,82 @@ class DALearner:
         batch = [torch_tools.to_tensor(x, self._device) for x in batch]
         return batch
 
-    def _build_train_loss(self, batch):
+    def _build_f_loss(self, batch):
+        source_x, source_y, target_x = batch
+        source_output = self._f_fn(source_x, is_training=True)
+        source_output.get_label(source_y)
+        f_loss = source_output.loss
+        target_output = self._f_fn(target_x, is_training=True)
+        # taking the last hidden layer as representations
+        source_z = source_output.features[self._repr_layer]
+        target_z = target_output.features[self._repr_layer]
+        z = torch.cat([source_z, target_z], 0)
+        dz = self._d_fn(z, is_training=False)
+        n_source = source_z.shape[0]
+        source_dz = dz[:n_source]
+        target_dz = dz[n_source:]
+        fd_loss = self._div_fn(source_dz, target_dz)
+        total_f_loss = f_loss + self._d_loss_w * fd_loss
         info = collections.OrderedDict()
-        output_head = self._model(x, is_training=True)
-        output_head.get_label(y)
-        info['train_acc'] = output_head.acc.item()
-        info['train_loss'] = output_head.loss.item()
-        return output_head.loss, info
+        info['train_source_acc'] = source_output.acc.item()
+        info['train_f_loss'] = f_loss.item()
+        info['train_fd_loss'] = fd_loss.item()
+        info['train_total_f_loss'] = total_f_loss.item()
+        return total_f_loss, info
+
+    def _build_d_grad_loss(self, z1, z2):
+        """gradient penalty on random interpolations between z1 and z2."""
+        alpha = torch.rand(z1.shape[0], 1, device=self._device)
+        z_intp = alpha * z1 + (1 - alpha) * z2
+        z_intp.requires_grad = True
+        dz_intp = self._d_fn(z_intp, is_training=True)
+        z_intp_grad = autograd.grad(outputs=dz_intp, inputs=z_intp,
+                grad_outputs=torch.ones(dz_intp.shape, device=self._device),
+                create_graph=True, retain_graph=True)[0]
+        z_grad_norm = (z_intp_grad.square().sum(-1) + 1e-10).sqrt()
+        d_grad_loss = (z_grad_norm - 1).square().mean()
+        return d_grad_loss
+
+    def _build_d_loss(self, batch):
+        source_x, _, target_x = batch
+        with torch.no_grad():
+            source_output = self._f_fn(source_x, is_training=False)
+            target_output = self._f_fn(target_x, is_training=False)
+        source_z = source_output.features[self._repr_layer]
+        target_z = target_output.features[self._repr_layer]
+        z = torch.cat([source_z, target_z], 0)
+        dz = self._d_fn(z, is_training=True)
+        n_source = source_z.shape[0]
+        source_dz = dz[:n_source]
+        target_dz = dz[n_source:]
+        d_loss = - self._div_fn(source_dz, target_dz)
+        info = collections.OrderedDict()
+        if self._gradient_penalty > 0:
+            # gradient penalty
+            d_grad_loss = self._build_d_grad_loss(source_z, target_z)
+            total_d_loss = d_loss + self._gradient_penalty * d_grad_loss
+            info['train_d_grad_loss'] = d_grad_loss.item()
+        else:
+            total_d_loss = d_loss
+        info['train_d_loss'] = d_loss.item()
+        info['train_total_d_loss'] = total_d_loss.item()
+        return total_d_loss, info
 
     def _train_step(self):
         batch = self._get_train_batch()
-        loss, info = self._build_train_loss(batch)
-        self._optimizer.zero_grad()
-        loss.backward()
-        self._optimizer.step()
-        self._train_info.update(info)
+        # update f
+        f_loss, f_info = self._build_f_loss(batch)
+        self._f_optimizer.zero_grad()
+        f_loss.backward()
+        self._f_optimizer.step()
+        self._train_info.update(f_info)
+        # update d
+        d_loss, d_info = self._build_d_loss(batch)
+        self._d_optimizer.zero_grad()
+        d_loss.backward()
+        self._d_optimizer.step()
+        self._train_info.update(d_info)
+        # step += 1
         self._global_step += 1
 
     def _get_valid_batch(self):
@@ -287,10 +341,9 @@ class DALearnerConfig(flag_tools.ConfigBase):
         self._target_dataset = self._target_dataset_factory()
 
     def _build_model(self):
-        self._model_cfg = flag_tools.Flags(
-            f_model_factory=self._f_model_factory,
-            d_model_factory=self._d_model_factory,
-        )
+        def _model_factory():
+            return DAModel(self._f_model_factory, self._d_model_factory)
+        self._model_cfg = flag_tools.Flags(model_factory=_model_factory)
 
     def _build_optimizer(self):
         self._optimizer_cfg = flag_tools.Flags(
@@ -330,7 +383,7 @@ class DALearnerConfig(flag_tools.ConfigBase):
         args.save_freq = self._flags.save_freq
         args.test_freq = self._flags.test_freq
         args.device = self._flags.device
-        return args
+        self._args = args
 
     @property
     def args(self):

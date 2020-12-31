@@ -29,3 +29,7 @@ class ModelWrapper(nn.Module):
         self.model.train(is_training)
         logits, features = self.model(x)
         return OutputHead(logits, features)
+
+
+def get_div_fn(name, relax):
+    return NotImplementedError
