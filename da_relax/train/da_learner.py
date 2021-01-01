@@ -147,7 +147,7 @@ class DALearner:
                 grad_outputs=torch.ones(dz_intp.shape, device=self._device),
                 create_graph=True, retain_graph=True)[0]
         z_grad_norm = (z_intp_grad.square().sum(-1) + 1e-10).sqrt()
-        d_grad_loss = (z_grad_norm - 1).square().mean()
+        d_grad_loss = (z_grad_norm - 1.0).square().mean()
         return d_grad_loss
 
     def _build_d_loss(self, batch):
