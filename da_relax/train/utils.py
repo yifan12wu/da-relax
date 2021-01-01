@@ -21,16 +21,27 @@ class OutputHead:
         self.acc = self.accs.mean()
 
 
-class ModelWrapper(nn.Module):
+class FModelWrapper(nn.Module):
 
-    def __init__(self, model_cls, **kwargs):
-        super(ModelWrapper, self).__init__()
-        self.model = model_cls(**kwargs)
+    def __init__(self, model_factory, repr_layer):
+        super().__init__()
+        self.model = model_factory()
+        self._repr_layer = repr_layer
 
-    def forward(self, x, is_training=True):
-        self.model.train(is_training)
+    def forward(self, x):
         logits, features = self.model(x)
-        return OutputHead(logits, features)
+        return OutputHead(logits, features[self._repr_layer])
+
+
+class DModelWrapper(nn.Module):
+
+    def __init__(self, model_factory):
+        super().__init__()
+        self.model = model_factory()
+
+    def forward(self, x):
+        logits, _ = self.model(x)
+        return logits[:, 0]
 
 
 def soft_relu(x):
@@ -72,23 +83,23 @@ def wasserstein_beta(d1, d2, beta):
 
     minimizing wasserstein_beta gives p2/p1 <= 1 + beta.
     Return:
-        E[log(sigmoid(d1))] + E[log(2 + beta - sigmoid(d2))] - log(1 + beta)
+        d2 - (1 + beta) * d1 where d1, d2 >= 0
     """
-    part1 = - soft_relu(-d1).mean()
-    part2 = (beta + 2.0 - (- soft_relu(-d2)).exp()).log().mean()
-    return part1 + part2 - np.log(1.0 + beta)
+    part1 = - (1.0 + beta) * soft_relu(d1)
+    part2 = soft_relu(d2)
+    return part1 + part2
 
 
 def js_sort(d1, d2, beta):
     """Reweighting-Relaxed Jensen-Shannon divergence.
 
     minimizing js_sort gives p2/p1 <= 1 + beta.
-    Return:
-        E[log(sigmoid(d1))] + E[log(2 + beta - sigmoid(d2))] - log(1 + beta)
+    select the smallest 1/(1 + beta) proportion of d1
     """
-    part1 = - soft_relu(-d1).mean()
-    part2 = (beta + 2.0 - (- soft_relu(-d2)).exp()).log().mean()
-    return part1 + part2 - np.log(1.0 + beta)
+    n = d1.shape[0]
+    n_selected = int(n // (1.0 + beta))
+    d1_selected = torch.topk(d1, n_selected, largest=False, sorted=False)
+    return js_div(d1_selected, d2)
 
 
 def get_div_fn(name, relax=0.0):
@@ -103,7 +114,7 @@ def get_div_fn(name, relax=0.0):
     elif name == 'w_beta':
         def _div_fn(d1, d2):
             return wasserstein_beta(d1, d2, relax)
-    elif name == 'jssort':
+    elif name == 'js_sort':
         def _div_fn(d1, d2):
             return js_sort(d1, d2, relax)
     else:

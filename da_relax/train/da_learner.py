@@ -33,11 +33,10 @@ class DALearner:
             model_cfg=None,
             optimizer_cfg=None,
             batch_size=128,
-            repr_layer=-2,  # -1: logits; -2: last hidden layer 
             d_loss_w=1.0,  # weight for distribution matching loss
             d_relax=0.0,  # relaxation for distribution matching
-            d_loss_name='jsbeta',  # divergence name
-            gradient_penalty=0,  # gradient penalty for regularizing d
+            d_loss_name='js_beta',  # divergence name
+            d_grad_penalty=0.0,  # gradient penalty for regularizing d
             # training loop args
             log_dir=DEFAULT_LOG_DIR,
             total_train_steps=30000,
@@ -116,15 +115,15 @@ class DALearner:
 
     def _build_f_loss(self, batch):
         source_x, source_y, target_x = batch
-        source_output = self._f_fn(source_x, is_training=True)
+        source_output = self._f_fn(source_x)
         source_output.get_label(source_y)
         f_loss = source_output.loss
-        target_output = self._f_fn(target_x, is_training=True)
+        target_output = self._f_fn(target_x)
         # taking the last hidden layer as representations
-        source_z = source_output.features[self._repr_layer]
-        target_z = target_output.features[self._repr_layer]
+        source_z = source_output.features
+        target_z = target_output.features
         z = torch.cat([source_z, target_z], 0)
-        dz = self._d_fn(z, is_training=False)
+        dz = self._d_fn(z)
         n_source = source_z.shape[0]
         source_dz = dz[:n_source]
         target_dz = dz[n_source:]
@@ -142,7 +141,7 @@ class DALearner:
         alpha = torch.rand(z1.shape[0], 1, device=self._device)
         z_intp = alpha * z1 + (1 - alpha) * z2
         z_intp.requires_grad = True
-        dz_intp = self._d_fn(z_intp, is_training=True)
+        dz_intp = self._d_fn(z_intp)
         z_intp_grad = autograd.grad(outputs=dz_intp, inputs=z_intp,
                 grad_outputs=torch.ones(dz_intp.shape, device=self._device),
                 create_graph=True, retain_graph=True)[0]
@@ -153,21 +152,21 @@ class DALearner:
     def _build_d_loss(self, batch):
         source_x, _, target_x = batch
         with torch.no_grad():
-            source_output = self._f_fn(source_x, is_training=False)
-            target_output = self._f_fn(target_x, is_training=False)
-        source_z = source_output.features[self._repr_layer]
-        target_z = target_output.features[self._repr_layer]
+            source_output = self._f_fn(source_x)
+            target_output = self._f_fn(target_x)
+        source_z = source_output.features
+        target_z = target_output.features
         z = torch.cat([source_z, target_z], 0)
-        dz = self._d_fn(z, is_training=True)
+        dz = self._d_fn(z)
         n_source = source_z.shape[0]
         source_dz = dz[:n_source]
         target_dz = dz[n_source:]
         d_loss = - self._div_fn(source_dz, target_dz)
         info = collections.OrderedDict()
-        if self._gradient_penalty > 0:
+        if self._d_grad_penalty > 0:
             # gradient penalty
             d_grad_loss = self._build_d_grad_loss(source_z, target_z)
-            total_d_loss = d_loss + self._gradient_penalty * d_grad_loss
+            total_d_loss = d_loss + self._d_grad_penalty * d_grad_loss
             info['train_d_grad_loss'] = d_grad_loss.item()
         else:
             total_d_loss = d_loss
@@ -201,11 +200,17 @@ class DALearner:
         return batch
 
     def _get_valid_info(self, batch):
+        source_x, source_y, target_x, target_y = batch
+        with torch.no_grad():
+            source_output = self._f_fn(source_x)
+            source_output.get_label(source_y)
+            target_output = self._f_fn(target_x)
+            target_output.get_label(target_y)
         info = collections.OrderedDict()
-        output_head = self._model(x, is_training=False)
-        output_head.get_label(y)
-        info['valid_acc'] = output_head.acc.item()
-        info['valid_loss'] = output_head.loss.item()
+        info['valid_source_acc'] = source_output.acc.item()
+        info['valid_source_loss'] = source_output.loss.item()
+        info['valid_target_acc'] = target_output.acc.item()
+        info['valid_target_loss'] = target_output.loss.item()
         return info
 
     def _valid_step(self):
@@ -271,8 +276,9 @@ class DALearner:
         for batch, size in data_iter:
             x = torch_tools.to_tensor(batch.x, self._device)
             y = torch_tools.to_tensor(batch.y, self._device)
-            output_head = self._f_fn(x, is_training=False)
-            output_head.get_label(y)
+            with torch.no_grad():
+                output_head = self._f_fn(x)
+                output_head.get_label(y)
             loss = output_head.losses[:size].sum().item()
             acc = output_head.accs[:size].sum().item()
             total_loss += loss
@@ -305,26 +311,31 @@ class DAModel(nn.Module):
             d_model_factory,
             ):
         super().__init__()
-        self.f_fn = f_model_factory()
-        self.d_fn = d_model_factory()
+        self.f_fn = utils.FModelWrapper(f_model_factory, repr_layer=-2)
+        self.d_fn = utils.DModelWrapper(d_model_factory())
 
 
 class DALearnerConfig(flag_tools.ConfigBase):
 
     def _set_default_flags(self):
         flags = self._flags
-        # 
+        #
         flags.device = None
-        flags.total_train_steps = 20000
-        flags.log_dir = DEFAULT_LOG_DIR
         # 
         flags.batch_size = 128
-        # logging
+        flags.d_loss_w = 1.0
+        flags.d_relax = 0.0
+        flags.d_loss_name = 'js'
+        flags.d_grad_penalty = 0.0
+        #
+        flags.log_dir = DEFAULT_LOG_DIR
+        flags.total_train_steps = 20000
         flags.print_freq = 2000
         flags.summary_freq = 100
         flags.save_freq = 5000
         flags.eval_freq = 10000
         # optimizer
+        # name, learning rate, weight decay
         flags.opt_args = flag_tools.Flags(
                 name_f='Adam', lr_f=1e-3, wd_f=0.0,
                 name_d='Adam', lr_d=1e-3, wd_d=0.0,
