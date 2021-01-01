@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch import autograd
+from torch import optim
 from torch.utils import tensorboard
 
 from ..tools import timer_tools
@@ -374,26 +375,48 @@ class DALearnerConfig(flag_tools.ConfigBase):
     def _d_model_factory(self):
         raise NotImplementedError
 
+    def _get_optimizer(self, parameters, name, lr, wd):
+        if name == 'Adam2':
+            optimizer = optim.Adam(parameters, betas=(0.5, 0.999),
+                    lr=lr, weight_decay=wd)
+        else:
+            opt_cls = getattr(optim, name)
+            optimizer = opt_cls(parameters, lr=lr, weight_decay=wd)
+        return optimizer
+
     def _f_optimizer_factory(self, parameters):
-        raise NotImplementedError
+        return self._get_optimizer(parameters, self._flags.opt_args.name_f,
+                self._flags.opt_args.lr_f, self._flags.opt_args.wd_f)
 
     def _d_optimizer_factory(self, parameters):
-        raise NotImplementedError
+        return self._get_optimizer(parameters, self._flags.opt_args.name_d,
+                self._flags.opt_args.lr_d, self._flags.opt_args.wd_d)
 
     def _build_args(self):
         args = flag_tools.Flags()
-        args.model = self._model
-        args.dataset = self._dataset
-        args.optimizer_config = self._optimizer_config
+        # non-flag args
+        args.source_dataset = self._source_dataset
+        args.target_dataset = self._target_dataset
+        args.model_cfg = self._model_cfg
+        args.optimizer_cfg = self._optimizer_cfg
         # copy from flags
-        args.log_dir = self._flags.log_dir
-        args.batch_size = self._flags.batch_size
-        args.total_train_steps = self._flags.total_train_steps
-        args.print_freq = self._flags.print_freq
-        args.summary_freq = self._flags.summary_freq
-        args.save_freq = self._flags.save_freq
-        args.test_freq = self._flags.test_freq
-        args.device = self._flags.device
+        keys = [
+                'device', 
+                'batch_size', 
+                'd_loss_w', 
+                'd_relax', 
+                'd_loss_name', 
+                'd_grad_penalty', 
+                'log_dir', 
+                'total_train_steps',
+                'print_freq',
+                'summary_freq',
+                'save_freq',
+                'eval_freq',
+                ]
+        for key in keys:
+            setattr(args, key, getattr(self._flags, key))
+        #
         self._args = args
 
     @property
