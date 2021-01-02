@@ -22,8 +22,7 @@ DATA_FILES = {
         'test_images': 't10k-images-idx3-ubyte.gz',
         'test_labels': 't10k-labels-idx1-ubyte.gz',
         }
-DATA_DIR = '/media/yw4/hdd/datasets/mnist'
-# DATA_DIR = os.path.join(os.getcwd(), 'datasets/mnist')
+DATA_DIR = os.path.join(os.getcwd(), 'datasets/mnist')
 
 
 class DataCache:

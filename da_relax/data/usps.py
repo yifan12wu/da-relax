@@ -16,8 +16,7 @@ DATA_FILES = {
         'train': 'zip.train.gz',
         'test': 'zip.test.gz',
         }
-DATA_DIR = '/media/yw4/hdd/datasets/usps'
-# DATA_DIR = os.path.join(os.getcwd(), 'datasets/usps')
+DATA_DIR = os.path.join(os.getcwd(), 'datasets/usps')
 
 class DataCache:
     """Avoid loading data more than once."""
