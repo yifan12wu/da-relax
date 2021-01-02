@@ -19,6 +19,13 @@ def config_logging(log_dir, filename='log.txt'):
 
 
 def get_unique_dir(log_dir='', max_num=100, keep_original=False):
+    """Get a unique dir name based on log_dir.
+
+    If keep_original is True, it checks the list
+    {log_dir, log_dir-0, log_dir-1, ..., log_dir-[max_num-1]}
+    and returns the first non-existing dir name. If keep_original is False
+    then log_dir is excluded from the list.
+    """
     if keep_original and not os.path.exists(log_dir):
         if log_dir == '':
             raise ValueError('log_dir cannot be empty with keep_original=True.')
