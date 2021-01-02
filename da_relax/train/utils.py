@@ -85,8 +85,8 @@ def wasserstein_beta(d1, d2, beta):
     Return:
         d2 - (1 + beta) * d1 where d1, d2 >= 0
     """
-    part1 = - (1.0 + beta) * soft_relu(d1)
-    part2 = soft_relu(d2)
+    part1 = - (1.0 + beta) * soft_relu(d1).mean()
+    part2 = soft_relu(d2).mean()
     return part1 + part2
 
 
@@ -98,7 +98,7 @@ def js_sort(d1, d2, beta):
     """
     n = d1.shape[0]
     n_selected = int(n // (1.0 + beta))
-    d1_selected = torch.topk(d1, n_selected, largest=False, sorted=False)
+    d1_selected = torch.topk(d1, n_selected, largest=False, sorted=False)[0]
     return js_div(d1_selected, d2)
 
 

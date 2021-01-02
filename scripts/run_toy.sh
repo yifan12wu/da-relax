@@ -1,10 +1,10 @@
 #!/bin/bash
-DIV="js"
-BETA="0.0"
+DIV="w_beta"
+BETA="4.0"
 RUN="0"
 
 if [[ "${DIV}" == "w_beta" ]]; then
-    D_GRAD_PENALTY="5.0"
+    D_GRAD_PENALTY="10.0"
 else
     D_GRAD_PENALTY="0.0"
 fi
