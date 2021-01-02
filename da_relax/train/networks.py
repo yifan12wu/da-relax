@@ -9,14 +9,14 @@ class LeNet(nn.Module):
     def __init__(self, n_classes):
         super(LeNet, self).__init__()
         self._n_classes = n_classes
-        self.conv1 = nn.Conv2d(1, 32, 5, padding=2)
-        self.conv2 = nn.Conv2d(32, 64, 5, padding=2)
+        self.conv1 = nn.Conv2d(1, 20, 5, padding=2)
+        self.conv2 = nn.Conv2d(20, 50, 5, padding=2)
         # size-2 pooling on outputs of each conv layer
         # 8x8 image size on outputs of conv2
-        n_in = 4 * 4 * 64
-        self.fc1 = nn.Linear(n_in, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, self._n_classes)
+        n_in = 4 * 4 * 50
+        self.fc1 = nn.Linear(n_in, 500)
+        self.fc2 = nn.Linear(500, 500)
+        self.fc3 = nn.Linear(500, self._n_classes)
 
     def forward(self, x):
         features = []
@@ -26,12 +26,12 @@ class LeNet(nn.Module):
         h = self.conv1(h)
         h = F.relu(h)
         features.append(h)
-        h = F.avg_pool2d(h, 2)
+        h = F.max_pool2d(h, 2)
         # conv layer 2
         h = self.conv2(h)
         h = F.relu(h)
         features.append(h)
-        h = F.avg_pool2d(h, 2)
+        h = F.max_pool2d(h, 2)
         # fc layers
         h = h.reshape(h.shape[0], -1)
         h = F.relu(self.fc1(h))

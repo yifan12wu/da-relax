@@ -28,10 +28,10 @@ class Config(da_learner.DALearnerConfig):
         flags.eval_freq = 5000
         # optimizer
         # name, learning rate, weight decay
-        flags.opt_args.name_f = 'Adam'
+        flags.opt_args.name_f = 'Adam2'
         flags.opt_args.lr_f = 1e-4
         flags.opt_args.wd_f = 1e-3
-        flags.opt_args.name_d = 'Adam'
+        flags.opt_args.name_d = 'Adam2'
         flags.opt_args.lr_d = 1e-4
         flags.opt_args.wd_d = 1e-5
         # selected label for target set
@@ -48,5 +48,5 @@ class Config(da_learner.DALearnerConfig):
         return networks.LeNet(n_classes=10)
 
     def _d_model_factory(self):
-        return networks.MLP(input_shape=(128,), n_units=(500, 500, 1))
+        return networks.MLP(input_shape=(500,), n_units=(500, 500, 1))
 
