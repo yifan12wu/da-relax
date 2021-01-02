@@ -57,19 +57,23 @@ class MLP(nn.Module):
         for i, n_out in enumerate(n_units):
             layer = nn.Linear(n_in, n_out)
             self.add_module('hidden_layer_{}'.format(i+1), layer)
-            n_in = n_units
+            n_in = n_out
             self._layers.append(layer)
         self._output_activation = output_activation
 
     def forward(self, x):
+        features = []
         h = x.reshape(x.shape[0], -1)
+        features.append(h)
         for layer in self._layers[:-1]:
             h = layer(h)
             h = F.relu(h)
+            features.append(h)
         h = self._layers[-1](h)
         if self._output_activation:
             h = F.relu(h)
-        return h
+        features.append(h)
+        return h, features
 
 
 

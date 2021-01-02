@@ -60,8 +60,8 @@ class DALearner:
         # information maintained during training and evaluation
         self._global_step = 0
         self._train_info = collections.OrderedDict()
-        self._eval_info = collections.OederedDict()
-        self._result_info = collections.OederedDict()
+        self._eval_info = collections.OrderedDict()
+        self._results = []
         self._summary_writer = tensorboard.SummaryWriter(
                 log_dir=self._log_dir)
 
@@ -267,7 +267,7 @@ class DALearner:
         # run through the test set
         logging.info('Evaluating on test.')
         self._eval_on_test()
-        logging.info(summary_tools.get_summary_str(info=self._result_info))
+        logging.info('Accuracy: {:.4g}.'.format(self._results[-1]))
         self._save_result()
 
     def _evaluate(self, data_iter):
@@ -296,13 +296,12 @@ class DALearner:
 
     def _eval_on_test(self):
         data_iter = self._get_eval_test_iter()
-        self._result_info.update(self._evaluate(data_iter))
+        self._results.append(self._evaluate(data_iter)['eval_acc'])
 
     def _save_result(self):
         result_file = os.path.join(self._log_dir, 'result.csv')
-        result = np.array(self._result_info['eval_acc'])
         with open(result_file, 'w') as f:
-            np.savetxt(f, result, fmt='%.4g', delimiter=',')
+            np.savetxt(f, self._results, fmt='%.4g', delimiter=',')
 
 
 class DAModel(nn.Module):
@@ -313,7 +312,7 @@ class DAModel(nn.Module):
             ):
         super().__init__()
         self.f_fn = utils.FModelWrapper(f_model_factory, repr_layer=-2)
-        self.d_fn = utils.DModelWrapper(d_model_factory())
+        self.d_fn = utils.DModelWrapper(d_model_factory)
 
 
 class DALearnerConfig(flag_tools.ConfigBase):

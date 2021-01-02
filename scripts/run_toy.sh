@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 DIV="js"
 BETA="0.0"
 RUN="0"
@@ -9,6 +9,7 @@ else
     D_GRAD_PENALTY="0.0"
 fi
 
+set -x
 python -u -B train_da_relax.py \
     --exp_name="toy" \
     --log_sub_dir="div-${DIV}_beta-${BETA}/run-${RUN}" \
@@ -17,3 +18,4 @@ python -u -B train_da_relax.py \
     --args="d_loss_name='${DIV}'" \
     --args="d_relax=${BETA}" \
     --args="d_grad_penalty=${D_GRAD_PENALTY}"
+set +x
