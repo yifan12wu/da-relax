@@ -12,7 +12,7 @@ DATA_CONFIG = {
     },
     'target': {
         'means': [[-0.3, -1.0], [0.3, 1.0]],
-        'stds': [[0.35, 0.1], [0.35, 0.1]],
+        'stds': [[0.4, 0.1], [0.4, 0.1]],
         'ns': [1, 9],
         'labels': [0, 1],
     },
@@ -96,7 +96,7 @@ class TwoGaussianTarget(ToyDataset):
             n_train=1000,
             n_valid=1000,
             n_test=1000,
-            seed=10):
+            seed=0):
         super().__init__(
             config=DATA_CONFIG['target'],
             n_train=n_train,
